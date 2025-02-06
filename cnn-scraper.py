@@ -4,14 +4,12 @@ from bs4 import BeautifulSoup
 from flask_cors import CORS
 import logging
 from datetime import datetime
-import re # regular expression
-
+import re
 
 app = Flask(__name__)
 CORS(app)
 
 logging.basicConfig(level=logging.ERROR)
-
 
 @app.route('/api/articles', methods=['GET'])
 def get_articles():
@@ -34,51 +32,49 @@ def get_articles():
         headlines_to_process = headlines[start:end]
 
         articles = []
-        
-        if headlines_to_process:
-            for headline in headlines_to_process:
-                title = headline.text
-                article_url = headline.find_parent('a')['href']
+        for headline in headlines_to_process:
+            title = headline.text
+            parent = headline.find_parent('a')
+            article_url = parent['href'] if parent else None
 
-                if not article_url.startswith('http'):
-                    article_url = requests.compat.urljoin(url, article_url)
+            if not article_url.startswith('http'):
+                article_url = requests.compat.urljoin(url, article_url)
 
-                article_response = requests.get(article_url)
-                article_soup = BeautifulSoup(article_response.text, 'html.parser')
-                content = article_soup.find('div', class_='article__content')
-                
-                # Extracting image URL
-                image_div = article_soup.find('div', class_='image')
-                image_url = image_div.find('img', class_='image__dam-img')['src'] if image_div else None
-                
-                # Inside your loop
-                byline = article_soup.find('div', class_='byline__names')
-                authors = byline.text.strip() if byline else "Unknown Author"
+            article_response = requests.get(article_url)
+            article_soup = BeautifulSoup(article_response.text, 'html.parser')
+            content = article_soup.find('div', class_='article__content')
+            
+            image_div = article_soup.find('div', class_='image')
+            image_url = None
+            if image_div:
+                img = image_div.find('img', class_='image__dam-img')
+                if img:
+                    image_url = img.get('src')
 
-                read_duration_div = article_soup.find('div', class_='headline__sub-description')
-                read_duration = read_duration_div.text.strip() if read_duration_div else "Unknown Duration"
+            byline = article_soup.find('div', class_='byline__names')
+            authors = byline.text.strip() if byline else "Unknown Author"
 
-                timestamp = article_soup.find('div', class_='timestamp')
-                if timestamp:
-                    timestamp_text = timestamp.text.strip()
-                    # Look for either 'Published' or 'Updated' in the timestamp text
-                    if 'Published' in timestamp_text:
-                        inspected_date = timestamp_text.split('Published', 1)[1].strip()
-                    elif 'Updated' in timestamp_text:
-                        inspected_date = timestamp_text.split('Updated', 1)[1].strip()
-                    else:
-                        inspected_date = "Unknown Date"
-                else:
-                    inspected_date = "Unknown Timestamp"
-                if content:
-                    articles.append({
-                        'title': title,
-                        'content': content.text.strip(),
-                        'image': image_url,
-                        'authors': authors,
-                        'read_duration': read_duration,
-                        'date_inspected': inspected_date
-                    })
+            read_duration_div = article_soup.find('div', class_='headline__sub-description')
+            read_duration = read_duration_div.text.strip() if read_duration_div else "Unknown Duration"
+
+            timestamp = article_soup.find('div', class_='timestamp')
+            inspected_date = "Unknown Timestamp"
+            if timestamp:
+                timestamp_text = timestamp.text.strip()
+                if 'Published' in timestamp_text:
+                    inspected_date = timestamp_text.split('Published', 1)[1].strip()
+                elif 'Updated' in timestamp_text:
+                    inspected_date = timestamp_text.split('Updated', 1)[1].strip()
+
+            if content:
+                articles.append({
+                    'notificationId': str(hash(title)),  # Creating a unique ID from title
+                    'title': title,
+                    'description': content.text.strip()[:200] + "..." if len(content.text.strip()) > 200 else content.text.strip(),  # Limit description to 200 chars for brevity
+                    'publicationDate': inspected_date,
+                    'author':authors,
+                    'img':image_url
+                })
         else: 
             print('NO HEADLINES') 
 
